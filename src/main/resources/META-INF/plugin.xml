@@ -13,8 +13,7 @@
     <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
     <description><![CDATA[
-    Enter short description for your plugin her2.<br>2
-    <em>most HTML tags may be u3sed</em>1
+    put mappings.tiny into .idea and enjoy the autocomplete
   ]]></description>
 
     <!-- Product and plugin compatibility requirements.

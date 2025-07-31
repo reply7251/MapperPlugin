@@ -5,16 +5,8 @@ import com.intellij.psi.PsiClass
 import com.intellij.psi.impl.search.JavaFilesSearchScope
 import com.intellij.psi.search.searches.AllClassesSearch
 import net.fabricmc.mappingio.FlatMappingVisitor
-import net.fabricmc.mappingio.MappedElementKind
-import net.fabricmc.mappingio.MappingFlag
 import net.fabricmc.mappingio.MappingReader
-import net.fabricmc.mappingio.MappingVisitor
-import net.fabricmc.mappingio.MappingWriter
 import net.fabricmc.mappingio.adapter.FlatAsRegularMappingVisitor
-import net.fabricmc.mappingio.adapter.MappingSourceNsSwitch
-import net.fabricmc.mappingio.tree.MappingTree
-import net.fabricmc.mappingio.tree.MemoryMappingTree
-import org.jetbrains.kotlin.idea.refactoring.memberInfo.qualifiedClassNameForRendering
 
 class MapperUtil private constructor(val project: Project) {
     companion object {
