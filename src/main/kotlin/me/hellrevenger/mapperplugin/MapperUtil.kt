@@ -1,9 +1,18 @@
 package me.hellrevenger.mapperplugin
 
+import com.intellij.lang.java.JavaLanguage
+import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.MessageType
+import com.intellij.openapi.ui.popup.Balloon
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.wm.WindowManager
 import com.intellij.psi.PsiClass
-import com.intellij.psi.impl.search.JavaFilesSearchScope
+import com.intellij.psi.PsiManager
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.AllClassesSearch
+import com.intellij.ui.awt.RelativePoint
 import net.fabricmc.mappingio.FlatMappingVisitor
 import net.fabricmc.mappingio.MappingReader
 import net.fabricmc.mappingio.adapter.FlatAsRegularMappingVisitor
@@ -40,12 +49,20 @@ class MapperUtil private constructor(val project: Project) {
             file.reader(),
             FlatAsRegularMappingVisitor(MyVisitor(mapping))
         )
-        AllClassesSearch.search(JavaFilesSearchScope(project), project).forEach { clazz ->
-            val name = clazz.qualifiedName?.replace(".", "/") ?: return@forEach
+
+        AllClassesSearch.search(MySearchScope(project), project).forEach { clazz ->
+            val name = clazz.qualifiedName?.slash() ?: return@forEach
             if (mapping.classes.contains(name)) {
                 mapping.psiClasses[name] = clazz
             }
         }
+
+        val statusBar = WindowManager.getInstance().getStatusBar(project).component ?: return
+        JBPopupFactory.getInstance()
+            .createHtmlTextBalloonBuilder("mapping processed", MessageType.INFO, null)
+            .setFadeoutTime(5000)
+            .createBalloon()
+            .show(RelativePoint.getCenterOf(statusBar), Balloon.Position.atRight)
     }
 
     val pattern = "(\\w+([./]\\w+)+)".toPattern()
@@ -66,6 +83,27 @@ class MapperUtil private constructor(val project: Project) {
     }
 }
 
+class MySearchScope(private val project: Project) : GlobalSearchScope(project) {
+    val psiManager = PsiManager.getInstance(project)
+
+    override fun contains(vf: VirtualFile): Boolean {
+        if(vf.isDirectory) return false
+        val provider = psiManager.findViewProvider(vf) ?: return false
+        if(provider.hasLanguage(JavaLanguage.INSTANCE)) {
+            val flag = project.basePath?.let { vf.path.contains(it) } == true
+
+
+            return flag
+        }
+        return false
+    }
+
+    override fun isSearchInModuleContent(p0: Module) = false
+
+    override fun isSearchInLibraries() = true
+
+}
+
 class MappingData {
     val fields = mutableMapOf<String, String>()
     val methods = mutableMapOf<String, String>()
@@ -82,7 +120,7 @@ class MyVisitor(val mapping: MappingData) : FlatMappingVisitor {
 
     override fun visitClass(srcName: String, dstNames: Array<out String?>): Boolean {
         if(!anyNullOrEquals(srcName, dstNames[0])) {
-            mapping.classes[srcName] = dstNames[0]!!
+            mapping.classes[srcName.slash()] = dstNames[0]!!.slash()
         }
         return true
     }

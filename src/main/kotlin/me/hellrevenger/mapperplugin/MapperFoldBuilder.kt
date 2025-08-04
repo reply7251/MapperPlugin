@@ -6,14 +6,12 @@ import com.intellij.lang.folding.FoldingDescriptor
 import com.intellij.openapi.editor.Document
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
-import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
-import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSourceLocation
-import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
-import org.jetbrains.kotlin.psi.KtExpression
-import org.jetbrains.kotlin.psi.KtNameReferenceExpression
+import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtLiteralStringTemplateEntry
 import org.jetbrains.kotlin.psi.KtQualifiedExpression
+import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.jetbrains.kotlin.psi.KtSafeQualifiedExpression
 
 
@@ -26,8 +24,6 @@ class MapperFoldBuilder : FoldingBuilderEx() {
     ): Array<out FoldingDescriptor?> {
 
         val descriptors = mutableListOf<FoldingDescriptor>()
-        val types = mutableSetOf<Class<*>>()
-        val types2 = mutableSetOf<Class<*>>()
 
         val mapperUtil = MapperUtil.of(root.project)
 
@@ -35,7 +31,29 @@ class MapperFoldBuilder : FoldingBuilderEx() {
             override fun visitElement(element: PsiElement) {
                 element.acceptChildren(this)
 
-
+                (element as? KtReferenceExpression)?.let {
+                    if(element is KtCallExpression) return@let
+                    var type = it.getKaTypeAsString() ?: return@let
+                    if(!type.startsWith("L")) {
+                        return@let
+                    }
+                    type = type.substring(1)
+                    val sub = type.substringBeforeLast("/")
+                    if(sub.endsWith(type.substring(sub.length))) {
+                        type = sub
+                    }
+                    mapperUtil.mapping.classes[type]?.let { _newName ->
+                        val newName = if(element.parent.parent is KtImportDirective) {
+                            _newName.dot().substring(element.parent.firstChild.text.length+1)
+                        } else {
+                            _newName.simple()
+                        }
+                        descriptors.add(FoldingDescriptor(
+                            element.node, element.textRange,
+                            null, newName
+                        ))
+                    }
+                }
 
                 (element.parent as? KtQualifiedExpression)?.let { parent ->
                     val isSafe = parent is KtSafeQualifiedExpression
@@ -43,51 +61,39 @@ class MapperFoldBuilder : FoldingBuilderEx() {
                         return@let
                     }
 
-
-                    var mappingKey = "${(parent.firstChild as? KtExpression)?.getKaTypeAsString()}."
-                    if(isSafe) {
-                        mappingKey = mappingKey.replace("?", "")
-                    }
                     val result = if(parent.lastChild is KtCallExpression) {
                         val member = parent.lastChild.firstChild
-                        mapperUtil.mapping.methods["${member.text}"] to member
+                        mapperUtil.mapping.methods[member.text] to member
                     } else {
                         val member = parent.lastChild
-                        mapperUtil.mapping.fields["${member.text}"] to member
+                        mapperUtil.mapping.fields[member.text] to member
                     }
                     if(result.first != null) {
                         descriptors.add(FoldingDescriptor(
                             result.second.node, result.second.textRange,
                             null, result.first!!
                         ))
-                    } else if(parent.firstChild.text.contains("FClient")) {
-                        val a = element.text
-                        val b = parent.text
-//                        println("null ${parent.firstChild.text}")
                     }
+                }
 
-
-                    val ref = parent.firstChild.reference?.resolve()
-
-                    if(ref != null) {
-
-//                            println("visiting ${parent.text}")
-//                            println("${element.getKaType()}.${it.lastChild.text}")
-//                            if(element.getKaType().toString() == "java/io/File") {
-//                                if(parent.lastChild is KtCallExpression) {
-//                                    descriptors.add(FoldingDescriptor(parent.lastChild.firstChild, parent.lastChild.firstChild.textRange))
-//                                } else {
-//                                    descriptors.add(FoldingDescriptor(parent.lastChild, parent.lastChild.textRange))
-//                                }
-//                            }
-
+                (element as? KtLiteralStringTemplateEntry)?.let {
+                    val from = it.text
+                    val mapped = if(from.startsWith("method_") || from.startsWith("m_")) {
+                        mapperUtil.mapping.methods[it.text]
+                    } else if (from.startsWith("field_") || from.startsWith("f_")) {
+                        mapperUtil.mapping.fields[it.text]
+                    } else if (from.contains("class_") || from.contains("C_")) {
+                        mapperUtil.mapping.classes[it.text.slash()]
                     } else {
-//                            println("null ref ${parent.firstChild.text}")
-//                            if(parent.firstChild.text.contains("minecraft")) {
-//                                println()
-//                            }
+                        null
                     }
 
+                    mapped?.let { dstName ->
+                        descriptors.add(FoldingDescriptor(
+                            element.node, element.textRange,
+                            null, dstName
+                        ))
+                    }
                 }
             }
         })
@@ -97,7 +103,7 @@ class MapperFoldBuilder : FoldingBuilderEx() {
 
     override fun isCollapsedByDefault(p0: ASTNode) = true
 
-    override fun getPlaceholderText(p0: ASTNode): String? {
+    override fun getPlaceholderText(p0: ASTNode): String {
         return "mapped${p0.text}"
     }
 }
