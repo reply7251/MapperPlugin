@@ -21,6 +21,7 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.util.PlatformIcons
 import com.intellij.util.ProcessingContext
+import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.idea.KotlinLanguage
 import org.jetbrains.kotlin.j2k.accessModifier
 import org.jetbrains.kotlin.name.FqName
@@ -93,46 +94,57 @@ class MyProvider(val id: String) : CompletionProvider<CompletionParameters>() {
                 type = type.substring(1)
             }
 
-            mapper.mapping.psiClasses[type]?.let { clazz ->
-                val className = mapper.mapping.classes[type]!!
+            fun suggestForType(type: String, modifiers: List<String> = listOf("public")) {
+                mapper.mapping.psiClasses[type]?.let { clazz ->
+                    val className = mapper.mapping.classes[type]!!
 
-                clazz.allMethods.forEach { method ->
-                    val dstName = mapper.mapping.methods[method.name] ?: return@forEach
+                    clazz.allMethods.forEach { method ->
+                        val dstName = mapper.mapping.methods[method.name] ?: return@forEach
 
-                    if(method.hasModifier(JvmModifier.STATIC) == isStatic) {
-                        val (suggestName, actualName) = if(method.accessModifier().contains("public")) {
-                            dstName to "${method.name}()"
-                        } else {
-                            "_$dstName" to "_invokePrivate(\"${method.name}\", arrayOf())"
+                        if(method.hasModifier(JvmModifier.STATIC) == isStatic) {
+                            val (suggestName, actualName) = if(modifiers.any { method.accessModifier().contains(it) }) {
+                                dstName to "${method.name}()"
+                            } else {
+                                "_$dstName" to "_invokePrivate(\"${method.name}\", arrayOf())"
+                            }
+                            results.addElement(wrapLookup(
+                                methodLookup(
+                                    method,
+                                    suggestName,
+                                    mapper.mapTypesSimple("${method.parameterList.text}: ${method.returnType?.canonicalText}"),
+                                    className.simple()
+                                ), actualName
+                            ))
                         }
-                        results.addElement(wrapLookup(
-                            methodLookup(
-                                method,
-                                suggestName,
-                                mapper.mapTypesSimple("${method.parameterList.text}: ${method.returnType?.canonicalText}"),
-                                className.simple()
-                            ), actualName
-                        ))
+                    }
+
+                    clazz.allFields.forEach { field ->
+                        val dstName = mapper.mapping.fields[field.name] ?: return@forEach
+
+                        if(field.hasModifier(JvmModifier.STATIC) == isStatic) {
+                            val (suggestName, actualName) = if(modifiers.any { field.accessModifier().contains(it) }) {
+                                dstName to field.name
+                            } else {
+                                "_$dstName" to "_getField(\"${field.name}\")"
+                            }
+                            results.addElement(wrapLookup(
+                                fieldLookup(
+                                    field,
+                                    suggestName,
+                                    ": ${mapper.mapTypesSimple(field.type.canonicalText)}",
+                                    className.simple()
+                                ),actualName
+                            ))
+                        }
                     }
                 }
-
-                clazz.allFields.forEach { field ->
-                    val dstName = mapper.mapping.fields[field.name] ?: return@forEach
-
-                    if(field.hasModifier(JvmModifier.STATIC) == isStatic) {
-                        val (suggestName, actualName) = if(field.accessModifier().contains("public")) {
-                            dstName to field.name
-                        } else {
-                            "_$dstName" to "_getField(\"${field.name}\")"
-                        }
-                        results.addElement(wrapLookup(
-                            fieldLookup(
-                                field,
-                                suggestName,
-                                ": ${mapper.mapTypesSimple(field.type.canonicalText)}",
-                                className.simple()
-                            ),actualName
-                        ))
+            }
+            suggestForType(type)
+            if(it is KtThisExpression) {
+                analyze(it) {
+                    val type = it.expressionType ?: return@analyze
+                    type.directSupertypes.forEach {
+                        suggestForType(it.toString().split(" ").last().replace("!", "").slash(), listOf("public", "protected"))
                     }
                 }
             }

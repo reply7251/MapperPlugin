@@ -6,10 +6,13 @@ import com.intellij.lang.folding.FoldingDescriptor
 import com.intellij.openapi.editor.Document
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
+import com.intellij.psi.impl.source.tree.LeafPsiElement
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtLiteralStringTemplateEntry
+import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtQualifiedExpression
 import org.jetbrains.kotlin.psi.KtReferenceExpression
 import org.jetbrains.kotlin.psi.KtSafeQualifiedExpression
@@ -79,11 +82,11 @@ class MapperFoldBuilder : FoldingBuilderEx() {
                 (element as? KtLiteralStringTemplateEntry)?.let {
                     val from = it.text
                     val mapped = if(from.startsWith("method_") || from.startsWith("m_")) {
-                        mapperUtil.mapping.methods[it.text]
+                        mapperUtil.mapping.methods[from]
                     } else if (from.startsWith("field_") || from.startsWith("f_")) {
-                        mapperUtil.mapping.fields[it.text]
+                        mapperUtil.mapping.fields[from]
                     } else if (from.contains("class_") || from.contains("C_")) {
-                        mapperUtil.mapping.classes[it.text.slash()]
+                        mapperUtil.mapping.classes[from.slash()]
                     } else {
                         null
                     }
@@ -93,6 +96,24 @@ class MapperFoldBuilder : FoldingBuilderEx() {
                             element.node, element.textRange,
                             null, dstName
                         ))
+                    }
+                }
+
+                (element as? LeafPsiElement)?.let { identifier ->
+                    (identifier.parent as? KtNamedFunction)?.let { parent ->
+                        if(!parent.hasModifier(KtTokens.OVERRIDE_KEYWORD))
+                            return@let
+                        val from = identifier.text
+                        if(from.startsWith("method_") || from.startsWith("m_")) {
+                            val mapped = mapperUtil.mapping.methods[identifier.text]
+                            mapped?.let {  dstName ->
+                                descriptors.add(FoldingDescriptor(
+                                    element.node, element.textRange,
+                                    null, dstName
+                                ))
+                            }
+                        }
+
                     }
                 }
             }
